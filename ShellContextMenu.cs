@@ -27,7 +27,7 @@ internal static class ShellContextMenu
     }
     static string Parent(string path) { return Path.GetDirectoryName(path.TrimEnd('\\')) ?? ""; }
 
-    internal static void Show(Window owner, string[] paths, Point screen, bool extended, List<Command> commands)
+    internal static bool Show(Window owner, string[] paths, Point screen, bool extended, List<Command> commands)
     {
         if (!SameParent(paths)) throw new NotSupportedException("Windows Shell menus require items from one folder. Select siblings, or use Show in Explorer for each folder.");
         var pidls = new List<IntPtr>();
@@ -104,6 +104,7 @@ internal static class ShellContextMenu
             foreach (var pidl in pidls) Marshal.FreeCoTaskMem(pidl);
         }
         if (chosen >= AppFirst && chosen - AppFirst < commands.Count) commands[(int)(chosen - AppFirst)].Run();
+        return chosen >= First && chosen <= Last;
     }
 
     [StructLayout(LayoutKind.Sequential)]

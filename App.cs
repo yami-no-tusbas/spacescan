@@ -804,19 +804,20 @@ class MainUI
         }
         try
         {
-            ShellContextMenu.Show(Window, tags.Select(PathOf).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(), point,
+            bool nativeCommand = ShellContextMenu.Show(Window, tags.Select(PathOf).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(), point,
                 (Keyboard.Modifiers & ModifierKeys.Shift) != 0, commands);
-            status.Text = "Shell menu closed. After external file changes, press F5 to refresh the selected folder.";
+            if (nativeCommand) status.Text = "Shell command invoked. After external file changes, press F5 to refresh the selected folder.";
         }
         catch (Exception ex)
         {
             var fallback = new ContextMenu { PlacementTarget = Window, HasDropShadow = false, Foreground = Brand.Text, Background = (Brush)Window.Resources["MenuBackground"] };
-            var reveal = new MenuItem { Header = "Show selection in Explorer (Windows menu)" };
+        fallback.Resources.MergedDictionaries.Add(Window.Resources);
+            var reveal = new MenuItem { Header = "Show selection in Explorer (Windows menu)", Style = (Style)Window.Resources["MI"] };
             reveal.Click += delegate { foreach (var group in tags.GroupBy(t => Path.GetDirectoryName(PathOf(t).TrimEnd('\\')))) ShowInExplorer(group.First()); };
             fallback.Items.Add(reveal);
             foreach (var command in commands)
             {
-                var item = new MenuItem { Header = "SpaceScan: " + command.Label };
+                var item = new MenuItem { Header = "SpaceScan: " + command.Label, Style = (Style)Window.Resources["MI"] };
                 item.Click += delegate { command.Run(); };
                 fallback.Items.Add(item);
             }
@@ -827,8 +828,9 @@ class MainUI
 
     void ShowThemeMenu()
     {
-        var m = new ContextMenu { Template = menu.Template, Foreground = menu.Foreground, HasDropShadow = false,
+        var m = new ContextMenu { Template = menu.Template, Foreground = Brand.Text, HasDropShadow = false,
             PlacementTarget = Find<Button>("themeBtn"), Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        m.Resources.MergedDictionaries.Add(Window.Resources);
         foreach (string mode in new[] { "Light", "Dark", "Automatic" })
         {
             string choice = mode;
@@ -848,8 +850,9 @@ class MainUI
     void ShowAbout()
     {
         var anchor = Find<Button>("aboutBtn");
-        var about = new ContextMenu { Template = menu.Template, Foreground = menu.Foreground, HasDropShadow = false,
+        var about = new ContextMenu { Template = menu.Template, Foreground = Brand.Text, HasDropShadow = false,
             PlacementTarget = anchor, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        about.Resources.MergedDictionaries.Add(Window.Resources);
         about.Items.Add(new MenuItem { Header = "SpaceScan — personal fork (x64)", IsEnabled = false, Style = (Style)Window.Resources["MI"] });
         about.Items.Add(new MenuItem { Header = "Original: limburatorul / Protagonist Labs — MIT", IsEnabled = false, Style = (Style)Window.Resources["MI"] });
         var source = new MenuItem { Header = "Original source and MIT licence", Style = (Style)Window.Resources["MI"] };
@@ -884,8 +887,9 @@ class MainUI
     // Drive picker: same opaque menu look as the row menu, one line per ready drive with its free space.
     void ShowDrives(Button anchor)
     {
-        var m = new ContextMenu { Template = menu.Template, Foreground = menu.Foreground, FontSize = menu.FontSize, HasDropShadow = false,
+        var m = new ContextMenu { Template = menu.Template, Foreground = Brand.Text, FontSize = menu.FontSize, HasDropShadow = false,
             PlacementTarget = anchor, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, VerticalOffset = 6 };
+        m.Resources.MergedDictionaries.Add(Window.Resources);
         foreach (var d in DriveInfo.GetDrives().Where(d => d.IsReady))
         {
             string label;
@@ -1386,8 +1390,9 @@ class MainUI
     void ShowHistoryMenu(Button anchor)
     {
         if (root == null) return;
-        var m = new ContextMenu { Template = menu.Template, Foreground = menu.Foreground, FontSize = menu.FontSize, HasDropShadow = false,
+        var m = new ContextMenu { Template = menu.Template, Foreground = Brand.Text, FontSize = menu.FontSize, HasDropShadow = false,
             PlacementTarget = anchor, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, VerticalOffset = 6 };
+        m.Resources.MergedDictionaries.Add(Window.Resources);
         foreach (var file in History.List(root.FullPath))
         {
             string f = file;
@@ -1972,8 +1977,9 @@ class MainUI
     void ShowExportMenu(Button anchor)
     {
         if (root == null || busy) return;
-        var m = new ContextMenu { Template = menu.Template, Foreground = menu.Foreground, FontSize = menu.FontSize, HasDropShadow = false,
+        var m = new ContextMenu { Template = menu.Template, Foreground = Brand.Text, FontSize = menu.FontSize, HasDropShadow = false,
             PlacementTarget = anchor, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, VerticalOffset = 6 };
+        m.Resources.MergedDictionaries.Add(Window.Resources);
         var items = new[] { "All folders (CSV)", "Report (HTML)", "This view (CSV)" };
         for (int i = 0; i < items.Length; i++)
         {
