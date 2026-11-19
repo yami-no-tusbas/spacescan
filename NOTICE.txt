@@ -1,0 +1,10 @@
+SpaceScan — personal Windows fork
+
+Based on https://github.com/limburatorul/spacescan
+Original author: limburatorul / Protagonist Labs.
+Copyright (c) 2026 Protagonist Labs. MIT License; see LICENSE.
+
+This distribution contains personal changes to the interface and Windows Shell
+integration. It is not an official Protagonist Labs release and is not affiliated
+with WizTree, Antibody Software, TreeSize or JAM Software. No WizTree/TreeSize
+artwork or resources are included.

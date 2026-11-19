@@ -1,3 +1,15 @@
+﻿# Fork personnel Windows x64
+
+Interface classique compacte, thèmes clair/sombre/automatique, colonnes configurables et vrai menu Shell Windows (extensions incluses).
+
+Voir le [guide du fork](docs/FORK-README.md), l'[état des lieux](docs/FORK-AUDIT.md), le [rapport de validation et ses limites](docs/VALIDATION.md) et l'[intégration Shell](docs/WINDOWS-SHELL.md).
+
+Compilation portable : `powershell -NoProfile -ExecutionPolicy Bypass -File .\build-portable.ps1`.
+
+Basé sur SpaceScan par limburatorul / Protagonist Labs, sous licence MIT. Les instructions et la présentation originales sont conservées ci-dessous à titre d'attribution ; le guide du fork décrit les différences de données, de compilation et de mise à jour.
+
+---
+
 # SpaceScan
 
 Finds what is filling up a Windows drive. Free, no limits, no nagging: it reads the NTFS Master File
