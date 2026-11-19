@@ -15,7 +15,6 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Markup;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using System.Web.Script.Serialization;
 using Microsoft.VisualBasic.FileIO;
@@ -727,10 +726,7 @@ class MainUI
         Find<TextBlock>("updateText").Text = "SpaceScan " + Updater.Current;
         Find<Button>("updateBtn").Click += delegate { CheckForUpdates(true); };
         Find<Button>("whatsNewBtn").Click += delegate { excludePopup.IsOpen = false; WhatsNew.Open(Window); };
-        var pizzaBtn = Find<Button>("pizzaBtn");
-        pizzaBtn.Click += delegate { Process.Start(new ProcessStartInfo("https://buymeacoffee.com/protagonistlabs") { UseShellExecute = true }); };
-        Nudge(pizzaBtn);
-        Window.ContentRendered += delegate { WhatsNew.OpenOnceAfterUpdate(Window); }; // an owner must have been shown
+        Find<Button>("aboutBtn").Click += delegate { ShowAbout(); };
         Find<Button>("findBtn").Click += delegate { RunSearch(); };
         Find<Button>("dupBtn").Click += delegate { RunDupes(); };
         foreach (var box in new[] { findName, findSize, findAge })
@@ -842,41 +838,20 @@ class MainUI
         }
     }
 
-    // The pizza button's nudge: 3 s after the window first shows, then every 10 s while it is on screen, a 700 ms double
-    // pulse (grow to 1.06, back, to 1.03, back) with its glow brightening it at each peak. Not while the pointer is on it,
-    // nor with Windows' animation effects off; the timer stops while the window is minimized.
-    void Nudge(Button b)
+    void ShowAbout()
     {
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-        var s = new ScaleTransform();
-        b.RenderTransformOrigin = new Point(0.5, 0.5);
-        b.RenderTransform = s;
-        timer.Tick += delegate
-        {
-            timer.Interval = TimeSpan.FromSeconds(10);
-            var glow = b.Template.FindName("glow", b) as UIElement;
-            if (!SystemParameters.ClientAreaAnimation || b.IsMouseOver || !b.IsVisible || glow == null) return;
-            s.BeginAnimation(ScaleTransform.ScaleXProperty, Pulse(1, 1.06, 1, 1.03, 1));
-            s.BeginAnimation(ScaleTransform.ScaleYProperty, Pulse(1, 1.06, 1, 1.03, 1));
-            glow.BeginAnimation(UIElement.OpacityProperty, Pulse(0, 1, 0, 1, 0));
-        };
-        EventHandler follow = delegate { timer.IsEnabled = Window.IsVisible && Window.WindowState != WindowState.Minimized; };
-        Window.ContentRendered += delegate
-        {
-            follow(null, null);
-            Window.StateChanged += follow;
-            Window.IsVisibleChanged += delegate { follow(null, null); };
-        };
-    }
-
-    // values 175 ms apart, each step eased out
-    static DoubleAnimationUsingKeyFrames Pulse(params double[] v)
-    {
-        var a = new DoubleAnimationUsingKeyFrames();
-        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-        for (int i = 0; i < v.Length; i++)
-            a.KeyFrames.Add(new EasingDoubleKeyFrame(v[i], KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(i * 175)), ease));
-        return a;
+        var anchor = Find<Button>("aboutBtn");
+        var about = new ContextMenu { Template = menu.Template, Foreground = menu.Foreground, HasDropShadow = false,
+            PlacementTarget = anchor, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        about.Items.Add(new MenuItem { Header = "SpaceScan — personal fork (x64)", IsEnabled = false, Style = (Style)Window.Resources["MI"] });
+        about.Items.Add(new MenuItem { Header = "Original: limburatorul / Protagonist Labs — MIT", IsEnabled = false, Style = (Style)Window.Resources["MI"] });
+        var source = new MenuItem { Header = "Original source and MIT licence", Style = (Style)Window.Resources["MI"] };
+        source.Click += delegate { Launch("https://github.com/limburatorul/spacescan", null); };
+        about.Items.Add(source);
+        var support = new MenuItem { Header = "Support the original author…", Style = (Style)Window.Resources["MI"] };
+        support.Click += delegate { Launch("https://buymeacoffee.com/protagonistlabs", null); };
+        about.Items.Add(support);
+        about.IsOpen = true;
     }
 
     // Reading the MFT needs admin; the app itself runs as the plain user so the command line stays unattended.
