@@ -221,8 +221,8 @@ static class Ecosystem
         return exe == null ? null : new[] { exe, "--move \"" + game.Id + "\"" };
     }
 
-    // SpaceScan's own exclusions and scan history: %APPDATA%\ProtagonistLabs\SpaceScan since 1.4.0, with every studio
-    // app's data. Main sets it from MoveData before anything is read, so loading the exe (check.ps1) moves nothing.
+    // Personal settings and history remain separate from the official installation.
+    // Loading the assembly moves no upstream data; the original MoveData helper is retained for compatibility tests.
     internal static string Data = Path.Combine(AppData, "SpaceScanFork");
 
     // The old folder (%APPDATA%\SpaceScan) moved to the new one once, the same rule as the installer's [Code]: a rename,
@@ -905,7 +905,7 @@ class MainUI
 
     internal static int Dwm(IntPtr h, int attr, int value) { return DwmSetWindowAttribute(h, attr, ref value, 4); }
 
-    void Error(string msg) { MessageBox.Show(Window, msg, "SpaceScan", MessageBoxButton.OK, MessageBoxImage.Error); }
+    void Error(string msg) { AppTheme.Message(Window, msg, "SpaceScan", null); }
 
     void SetView(int v)
     {
@@ -975,20 +975,6 @@ class MainUI
         get { return Ecosystem.Exe("filelabs") ?? Ecosystem.Uninstalled("{7E4C2B9A-3F1D-4C8E-9A6B-51D0C2E8F4A7}_is1"); }
     }
 
-    // Publishes where we live, so File Labs (or anything else) can offer "Scan with SpaceScan (personal)"; and when the Explorer
-    // menu is on, points it here too (the exe moved to Program Files in 1.4.0).
-    static void RegisterSelf()
-    {
-        if (Ecosystem.TestRoot != null) return; // a test copy must not repoint the user's own SpaceScan
-        try
-        {
-            using (var k = Registry.CurrentUser.CreateSubKey(@"Software\SpaceScan"))
-                if (k != null) k.SetValue("ExePath", ExePath);
-            if (ShellMenuInstalled) WriteShellMenu(true);
-        }
-        catch (Exception) { }
-    }
-
     static readonly string[] ShellKeys =
     {
         @"Software\Classes\Directory\shell\SpaceScanFork",
@@ -1020,67 +1006,6 @@ class MainUI
             using (var c = Registry.CurrentUser.CreateSubKey(key + @"\command"))
                 c.SetValue("", "\"" + ExePath + "\" \"" + (key.Contains("Background") ? "%V" : "%1") + "\"");
         }
-    }
-
-    string dismissedTag; // the release the user said No to: not asked again this session, unless they check by hand
-    bool checking;
-
-    void CheckForUpdates(bool manual)
-    {
-        if (checking) return;
-        checking = true;
-        var text = Find<TextBlock>("updateText");
-        if (manual) text.Text = "Checking…";
-        ThreadPool.QueueUserWorkItem(delegate
-        {
-            Updater.Release release = null;
-            bool failed = false;
-            try { release = Updater.Newer(); }
-            catch (Exception ex)
-            {
-                if (!Updater.Failed(ex)) throw;
-                failed = true; // the automatic check stays quiet and tries again next hour
-            }
-            Window.Dispatcher.BeginInvoke((Action)delegate
-            {
-                checking = false;
-                text.Text = manual && failed ? Updater.CheckFailed
-                    : "SpaceScan " + Updater.Current + (manual && release == null ? " — no update found" : "");
-                if (release == null || (!manual && release.Tag == dismissedTag)) return;
-                if (MessageBox.Show(Window, "SpaceScan " + release.Version + " is out (you have " + Updater.Current + ").\n\nInstall it now? Windows will ask for permission, then SpaceScan closes, updates and opens again.",
-                        "SpaceScan update", MessageBoxButton.YesNo, MessageBoxImage.Information) != MessageBoxResult.Yes)
-                {
-                    dismissedTag = release.Tag;
-                    return;
-                }
-                Install(release);
-            });
-        });
-    }
-
-    void Install(Updater.Release release)
-    {
-        checking = true; // no second check while this one downloads
-        status.Text = "Downloading SpaceScan " + release.Version + "…";
-        ThreadPool.QueueUserWorkItem(delegate
-        {
-            string installer = null, error = null;
-            try { installer = Updater.Download(release); }
-            catch (Exception ex)
-            {
-                if (!(ex is System.Net.WebException || ex is IOException || ex is UnauthorizedAccessException)) throw;
-                error = ex.Message;
-            }
-            Window.Dispatcher.BeginInvoke((Action)delegate
-            {
-                checking = false;
-                status.Text = "";
-                if (error != null) { Error("The update couldn't be installed: " + error); return; }
-                try { Updater.Install(installer); }
-                catch (Win32Exception) { status.Text = "Update not installed."; return; } // "No" on the UAC prompt: this version goes on
-                Window.Close();
-            });
-        });
     }
 
     void RefreshIntegration()
@@ -1844,11 +1769,11 @@ class MainUI
         long size = items.Sum(t => t is Node ? ((Node)t).Size : ((FileEntry)t).Size);
         // One item to the Recycle Bin: the shell asks. Otherwise we ask once for the whole selection.
         bool ask = permanent || items.Count > 1;
-        if (ask && MessageBox.Show(Window, string.Format("{0} {1:N0} item(s), {2}?\n\n{3}{4}",
+        if (ask && !AppTheme.Message(Window, string.Format("{0} {1:N0} item(s), {2}?\n\n{3}{4}",
                 permanent ? "PERMANENTLY delete" : "Move to the Recycle Bin:", items.Count, Brand.Fmt(size),
                 string.Join("\n", items.Take(10).Select(PathOf)) + (items.Count > 10 ? "\n…" : ""),
                 permanent ? "\n\nThis can't be undone." : ""),
-                permanent ? "Delete permanently" : "Delete", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+                permanent ? "Delete permanently" : "Delete", permanent ? "Delete permanently" : "Move to Recycle Bin"))
             return;
         var uiOption = ask ? UIOption.OnlyErrorDialogs : UIOption.AllDialogs;
         var recycle = permanent ? RecycleOption.DeletePermanently : RecycleOption.SendToRecycleBin;
@@ -2093,7 +2018,6 @@ class MainUI
     {
         // A bare path (Explorer's or File Labs' "Scan with SpaceScan (personal)") opens the window on it;
         // anything with options runs headless and writes files.
-        // Before either reads a setting or the history: the data folder moves in with the other studio apps, once.
         // The fork keeps its data in SpaceScanFork; upstream data is not migrated.
         if (args.Any(a => a.StartsWith("-"))) return Cli.Run(args);
         if (args.Length > 0) startPath = args[0];

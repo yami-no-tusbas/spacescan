@@ -95,6 +95,27 @@ internal static class AppTheme
         try { MainUI.Dwm(handle, 20, Dark ? 1 : 0); MainUI.Dwm(handle, 33, 1 /*do not round*/); }
         catch (DllNotFoundException) { } catch (EntryPointNotFoundException) { }
     }
+    internal static bool Message(Window owner, string text, string title, string acceptLabel)
+    {
+        var dialog = Dialog(owner, title, 580, 330);
+        var body = new DockPanel { Margin = new Thickness(12) };
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0) };
+        if (acceptLabel != null)
+        {
+            var cancel = new Button { Content = "Cancel", IsDefault = true, IsCancel = true, Style = (Style)main.Resources["Ghost"] };
+            cancel.Click += delegate { dialog.DialogResult = false; };
+            actions.Children.Add(cancel);
+        }
+        var accept = new Button { Content = acceptLabel ?? "OK", IsDefault = acceptLabel == null, IsCancel = acceptLabel == null, Style = (Style)main.Resources["Primary"] };
+        accept.Click += delegate { dialog.DialogResult = true; };
+        actions.Children.Add(accept);
+        DockPanel.SetDock(actions, Dock.Bottom); body.Children.Add(actions);
+        body.Children.Add(new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Foreground = Brand.Text } });
+        dialog.Content = body;
+        return dialog.ShowDialog() == true;
+    }
+
     internal static Window Dialog(Window owner, string title, double width, double height)
     {
         var dialog = new Window { Owner = owner, Title = title, Width = width, Height = height, MinWidth = 380, MinHeight = 250,

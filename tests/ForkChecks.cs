@@ -66,6 +66,18 @@ class ForkChecks
             themeField.SetValue(preferences, "Light"); Call(theme, "Apply", null); Pump(dialog);
             Require(((SolidColorBrush)dialog.Foreground).Color == ((SolidColorBrush)window.Resources["Text"]).Color, "existing secondary window updates to light");
             dialog.Close();
+            bool sawConfirmation = false;
+            var cancelTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
+            cancelTimer.Tick += delegate
+            {
+                cancelTimer.Stop();
+                var confirmation = app.Windows.Cast<Window>().Single(w => w.Title == "Confirmation test");
+                sawConfirmation = ((SolidColorBrush)confirmation.Foreground).Color == ((SolidColorBrush)window.Foreground).Color;
+                confirmation.Close();
+            };
+            cancelTimer.Start();
+            bool accepted = (bool)Call(theme, "Message", null, window, "No file operation is performed by this test.", "Confirmation test", "Test acceptance");
+            Require(sawConfirmation && !accepted, "themed confirmation closes without accepting an operation");
             var widths = (Dictionary<string, double>)settingsType.GetField("Widths", Flags).GetValue(preferences);
             var visible = (Dictionary<string, bool>)settingsType.GetField("Visible", Flags).GetValue(preferences);
             widths["TreeCol2"] = 140; visible["TreeCol3"] = false;
