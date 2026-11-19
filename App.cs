@@ -223,7 +223,7 @@ static class Ecosystem
 
     // SpaceScan's own exclusions and scan history: %APPDATA%\ProtagonistLabs\SpaceScan since 1.4.0, with every studio
     // app's data. Main sets it from MoveData before anything is read, so loading the exe (check.ps1) moves nothing.
-    internal static string Data = Path.Combine(Folder, "SpaceScan");
+    internal static string Data = Path.Combine(AppData, "SpaceScanFork");
 
     // The old folder (%APPDATA%\SpaceScan) moved to the new one once, the same rule as the installer's [Code]: a rename,
     // never a copy, so it is instant and never half done. A new folder that already holds something is never mixed
@@ -358,12 +358,12 @@ static class Updater
 static class Brand
 {
     public static readonly Brush Text = Make("#e8eef6"), Dim = Make("#8a97aa"), Dimmer = Make("#5d6879");
+    public static readonly Brush Selected = Make("#253e63");
     public static readonly Brush Accent = Make("#4c8dff"), Pink = Make("#ff5c8a"), Ground = Make("#0a0d13");
 
     static Brush Make(string hex)
     {
         var b = (SolidColorBrush)new BrushConverter().ConvertFromString(hex);
-        b.Freeze();
         return b;
     }
 
@@ -528,9 +528,6 @@ class MainUI
 
     [DllImport("dwmapi.dll")]
     static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
-    [DllImport("dwmapi.dll")]
-    static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS m);
-    struct MARGINS { public int Left, Right, Top, Bottom; }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct SHELLEXECUTEINFO
@@ -592,6 +589,8 @@ class MainUI
     public MainUI()
     {
         using (var s = typeof(MainUI).Assembly.GetManifestResourceStream("MainWindow.xaml")) Window = (Window)XamlReader.Load(s);
+        AppTheme.Initialize(Window);
+        ColumnLayout.Apply(Window);
         pathBox = Find<TextBox>("pathBox");
         scanBtn = Find<Button>("scanBtn");
         browseBtn = Find<Button>("browseBtn");
@@ -651,7 +650,6 @@ class MainUI
         progress = Find<Border>("progress");
         menu = (ContextMenu)Window.Resources["RowMenu"];
 
-        Window.SourceInitialized += delegate { ApplyGlass(); };
         treeList.ItemsSource = rows;
 
         var drivesBtn = Find<Button>("drivesBtn");
@@ -659,18 +657,6 @@ class MainUI
         var first = DriveInfo.GetDrives().FirstOrDefault(d => d.IsReady);
         if (first != null) pathBox.Text = first.Name;
         emptyState = Find<FrameworkElement>("emptyState");
-        // With the content running under the title bar, a maximized window overhangs the screen by the frame width.
-        var maxBtn = Find<Button>("maxBtn");
-        Window.StateChanged += delegate
-        {
-            bool max = Window.WindowState == WindowState.Maximized;
-            Window.BorderThickness = new Thickness(max ? 8 : 0);
-            maxBtn.Content = max ? "" : ""; // restore / maximize glyphs
-        };
-        Find<Button>("minBtn").Click += delegate { SystemCommands.MinimizeWindow(Window); };
-        maxBtn.Click += delegate { if (Window.WindowState == WindowState.Maximized) SystemCommands.RestoreWindow(Window); else SystemCommands.MaximizeWindow(Window); };
-        Find<Button>("closeBtn").Click += delegate { Window.Close(); };
-
         scanBtn.Click += delegate { StartOrStop(); };
         pathBox.KeyDown += (s, e) => { if (e.Key == Key.Enter) { e.Handled = true; StartOrStop(); } };
         browseBtn.Click += delegate
@@ -717,15 +703,16 @@ class MainUI
         };
         excludePopup.Opened += delegate { RefreshIntegration(); };
         LoadExclusions();
-        RegisterSelf();
-        ThreadPool.QueueUserWorkItem(delegate { Ecosystem.WriteCard(ExePath, typeof(MainUI).Assembly.GetName().Version.ToString(3)); });
-        // Updates: a few seconds after start, then every hour while open; Settings has the manual check.
-        var updates = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        updates.Tick += delegate { updates.Interval = TimeSpan.FromHours(1); CheckForUpdates(false); };
-        updates.Start();
+        // A personal portable must not repoint the installed upstream app or install its releases.
         Find<TextBlock>("updateText").Text = "SpaceScan " + Updater.Current;
-        Find<Button>("updateBtn").Click += delegate { CheckForUpdates(true); };
+        Find<Button>("updateBtn").Click += delegate { Launch("https://github.com/limburatorul/spacescan/releases", null); };
         Find<Button>("whatsNewBtn").Click += delegate { excludePopup.IsOpen = false; WhatsNew.Open(Window); };
+        Find<Button>("themeBtn").Click += delegate { ShowThemeMenu(); };
+        Find<Button>("columnsBtn").Click += delegate
+        {
+            int view = viewExt.IsVisible ? 1 : viewTop.IsVisible ? 2 : viewSearch.IsVisible ? 3 : viewDup.IsVisible ? 4 : viewCmp.IsVisible ? 5 : viewDrives.IsVisible ? 6 : 0;
+            ColumnLayout.Open(Window, view, Error);
+        };
         Find<Button>("aboutBtn").Click += delegate { ShowAbout(); };
         Find<Button>("findBtn").Click += delegate { RunSearch(); };
         Find<Button>("dupBtn").Click += delegate { RunDupes(); };
@@ -823,7 +810,7 @@ class MainUI
         }
         catch (Exception ex)
         {
-            var fallback = new ContextMenu { PlacementTarget = Window, HasDropShadow = false };
+            var fallback = new ContextMenu { PlacementTarget = Window, HasDropShadow = false, Foreground = Brand.Text, Background = (Brush)Window.Resources["MenuBackground"] };
             var reveal = new MenuItem { Header = "Show selection in Explorer (Windows menu)" };
             reveal.Click += delegate { foreach (var group in tags.GroupBy(t => Path.GetDirectoryName(PathOf(t).TrimEnd('\\')))) ShowInExplorer(group.First()); };
             fallback.Items.Add(reveal);
@@ -836,6 +823,26 @@ class MainUI
             status.Text = "Shell menu unavailable: " + ex.Message;
             fallback.IsOpen = true;
         }
+    }
+
+    void ShowThemeMenu()
+    {
+        var m = new ContextMenu { Template = menu.Template, Foreground = menu.Foreground, HasDropShadow = false,
+            PlacementTarget = Find<Button>("themeBtn"), Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        foreach (string mode in new[] { "Light", "Dark", "Automatic" })
+        {
+            string choice = mode;
+            var item = new MenuItem { Header = (AppTheme.Preferences.Theme == mode ? "✓  " : "     ") + mode, Style = (Style)Window.Resources["MI"] };
+            item.Click += delegate
+            {
+                string previous = AppTheme.Preferences.Theme;
+                AppTheme.Preferences.Theme = choice;
+                try { AppTheme.Preferences.Save(); AppTheme.Apply(); }
+                catch (Exception ex) { AppTheme.Preferences.Theme = previous; Error("Could not save theme: " + ex.Message); }
+            };
+            m.Items.Add(item);
+        }
+        m.IsOpen = true;
     }
 
     void ShowAbout()
@@ -890,21 +897,6 @@ class MainUI
             m.Items.Add(item);
         }
         m.IsOpen = true;
-    }
-
-    // Acrylic through DWM (Win11 22H2+). WPF composes with alpha, so the desktop shows through the translucent layers.
-    // Anywhere it isn't available (older Windows, Windows Server 2019/2022) the window keeps its opaque ground.
-    void ApplyGlass()
-    {
-        var h = new WindowInteropHelper(Window).Handle;
-        HwndSource.FromHwnd(h).CompositionTarget.BackgroundColor = Colors.Transparent; // default is opaque black: partial alpha would go dark
-        Dwm(h, 20, 1);          // dark title bar
-        Dwm(h, 33, 2);          // rounded corners
-        Dwm(h, 34, 0x00362B26); // border color #262b36 (0x00BBGGRR)
-        Dwm(h, 36, 0x00F6EEE8); // caption text #e8eef6
-        var m = new MARGINS { Left = -1, Right = -1, Top = -1, Bottom = -1 };
-        bool glass = DwmExtendFrameIntoClientArea(h, ref m) == 0 && Dwm(h, 38, 3 /*acrylic*/) == 0;
-        Window.Background = glass ? Brushes.Transparent : Brand.Ground;
     }
 
     internal static int Dwm(IntPtr h, int attr, int value) { return DwmSetWindowAttribute(h, attr, ref value, 4); }
@@ -979,7 +971,7 @@ class MainUI
         get { return Ecosystem.Exe("filelabs") ?? Ecosystem.Uninstalled("{7E4C2B9A-3F1D-4C8E-9A6B-51D0C2E8F4A7}_is1"); }
     }
 
-    // Publishes where we live, so File Labs (or anything else) can offer "Scan with SpaceScan"; and when the Explorer
+    // Publishes where we live, so File Labs (or anything else) can offer "Scan with SpaceScan (personal)"; and when the Explorer
     // menu is on, points it here too (the exe moved to Program Files in 1.4.0).
     static void RegisterSelf()
     {
@@ -995,9 +987,9 @@ class MainUI
 
     static readonly string[] ShellKeys =
     {
-        @"Software\Classes\Directory\shell\SpaceScan",
-        @"Software\Classes\Drive\shell\SpaceScan",
-        @"Software\Classes\Directory\Background\shell\SpaceScan"
+        @"Software\Classes\Directory\shell\SpaceScanFork",
+        @"Software\Classes\Drive\shell\SpaceScanFork",
+        @"Software\Classes\Directory\Background\shell\SpaceScanFork"
     };
 
     static bool ShellMenuInstalled
@@ -1018,7 +1010,7 @@ class MainUI
             if (!on) { Registry.CurrentUser.DeleteSubKeyTree(key, false); continue; }
             using (var k = Registry.CurrentUser.CreateSubKey(key))
             {
-                k.SetValue("", "Scan with SpaceScan");
+                k.SetValue("", "Scan with SpaceScan (personal)");
                 k.SetValue("Icon", ExePath);
             }
             using (var c = Registry.CurrentUser.CreateSubKey(key + @"\command"))
@@ -2093,10 +2085,10 @@ class MainUI
     [STAThread]
     static int Main(string[] args)
     {
-        // A bare path (Explorer's or File Labs' "Scan with SpaceScan") opens the window on it;
+        // A bare path (Explorer's or File Labs' "Scan with SpaceScan (personal)") opens the window on it;
         // anything with options runs headless and writes files.
         // Before either reads a setting or the history: the data folder moves in with the other studio apps, once.
-        Ecosystem.Data = Ecosystem.MoveData(Path.Combine(Ecosystem.AppData, "SpaceScan"), Ecosystem.Data);
+        // The fork keeps its data in SpaceScanFork; upstream data is not migrated.
         if (args.Any(a => a.StartsWith("-"))) return Cli.Run(args);
         if (args.Length > 0) startPath = args[0];
         AppDomain.CurrentDomain.UnhandledException += (s, e) => ShowCrash(e.ExceptionObject);

@@ -1,4 +1,4 @@
-# État initial — 19 novembre 2026
+﻿# État initial — 19 novembre 2026
 
 Source : https://github.com/limburatorul/spacescan, master a33675a3b6182327912002f6166a2359376defd6 (1.4.4).
 
@@ -20,6 +20,8 @@ Source : https://github.com/limburatorul/spacescan, master a33675a3b618232791200
 3. Interface compacte, palettes clair/sombre/automatique persistées, colonnes configurables et soutien dans À propos.
 4. Vérifications, archive portable x64 et documentation des limites et essais manuels.
 
-La capture WizTree annoncée n'est pas accessible dans ce chat. L'organisation suit la description sans reprendre de ressources de WizTree.
+Les captures ont été reçues ensuite : l'organisation reprend une barre de commandes, des onglets simples et un tableau compact, sans reprendre de ressources de WizTree.
 
 Les performances sur plusieurs dizaines de millions d'entrées et la compatibilité d'extensions tierces ne peuvent pas être déduites de la seule compilation : conserver les résultats réellement mesurés et une matrice d'essais manuels.
+
+Référence compilée : check.ps1 passe tous ses contrôles synthétiques ; MFT ignoré car processus non administrateur.

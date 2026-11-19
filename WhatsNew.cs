@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -71,7 +71,7 @@ class WhatsNew
     readonly Window owner;
     readonly List<Release> releases = Load();
     readonly StackPanel nav = new StackPanel();
-    readonly Border banner = new Border { CornerRadius = new CornerRadius(10), ClipToBounds = true, Margin = new Thickness(0, 0, 0, 14), HorizontalAlignment = HorizontalAlignment.Left };
+    readonly Border banner = new Border { CornerRadius = new CornerRadius(0), ClipToBounds = true, Margin = new Thickness(0, 0, 0, 14), HorizontalAlignment = HorizontalAlignment.Left };
     readonly StackPanel notes = new StackPanel();
     readonly ScrollViewer notesScroll;
     int shown = -1;
@@ -85,7 +85,8 @@ class WhatsNew
             Owner = owner, WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowInTaskbar = false,
             Background = Brand.Ground, Foreground = Brand.Text, FontFamily = new FontFamily("Segoe UI"), FontSize = 13.5, UseLayoutRounding = true,
         };
-        window.SourceInitialized += delegate { MainUI.Dwm(new System.Windows.Interop.WindowInteropHelper(window).Handle, 20, 1); }; // dark title bar
+        window.Resources.MergedDictionaries.Add(owner.Resources);
+        window.SourceInitialized += delegate { AppTheme.Decorate(window); }; // dark title bar
         window.PreviewKeyDown += (s, e) =>
         {
             if (e.Key == Key.Escape) window.Close();
@@ -140,7 +141,8 @@ class WhatsNew
         }
     }
 
-    static readonly Brush Selected = new SolidColorBrush(Color.FromArgb(0x2B, 0x4C, 0x8D, 0xFF)), Body = new SolidColorBrush(Color.FromRgb(0xD6, 0xDE, 0xEA));
+    static Brush Selected { get { return Brand.Selected; } }
+    static Brush Body { get { return Brand.Text; } }
 
     void Show(int i)
     {
