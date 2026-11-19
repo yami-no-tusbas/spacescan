@@ -1,5 +1,17 @@
+[CmdletBinding()]
+param([switch]$SkipMft)
+$ErrorActionPreference = 'Stop'
 # Self-check: builds a known tree, then verifies scan totals, stats, search and duplicate detection.
 $root = Join-Path $env:TEMP ("spacescan_check_" + [guid]::NewGuid())
+# Restrict every recursive cleanup to this generated synthetic tree.
+$testTree = [IO.Path]::GetFullPath($root)
+if ([IO.Path]::GetDirectoryName($testTree).TrimEnd('\') -ne [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') -or
+    [IO.Path]::GetFileName($testTree) -notmatch '^spacescan_check_[a-f0-9-]+$') { throw 'Unexpected test directory' }
+function Remove-TestTree([string]$path) {
+    $target = [IO.Path]::GetFullPath($path)
+    if ($target -ne $testTree -and -not $target.StartsWith($testTree + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Cleanup outside test tree' }
+    if ([IO.Directory]::Exists('\\?\' + $target)) { [IO.Directory]::Delete('\\?\' + $target, $true) }
+}
 $deep = $root + ('\' + ('d' * 50)) * 6   # ~320 chars, past MAX_PATH
 [IO.Directory]::CreateDirectory("\\?\$deep") | Out-Null
 [IO.File]::WriteAllBytes("\\?\$root\a.bin", (New-Object byte[] 1000))
@@ -205,9 +217,9 @@ $moved = (& $moveData $old $new) -eq $new -and -not (Test-Path $old) -and (Get-I
 $again = (& $moveData $old $new) -eq $new -and (Get-Item "$new\history\a.scan").Length -eq 10
 Put $old 20
 $kept = (& $moveData $old $new) -eq $new -and (Get-Item "$old\history\a.scan").Length -eq 20 -and (Get-Item "$new\history\a.scan").Length -eq 10 -and (Get-Content "$new\move.log" -Raw) -match 'left where it is'
-Remove-Item $new -Recurse -Force; [IO.Directory]::CreateDirectory($new) | Out-Null
+Remove-TestTree $new; [IO.Directory]::CreateDirectory($new) | Out-Null
 $empty = (& $moveData $old $new) -eq $new -and -not (Test-Path $old) -and (Get-Item "$new\history\a.scan").Length -eq 20
-Remove-Item $new -Recurse -Force; Put $old 30
+Remove-TestTree $new; Put $old 30
 $held = [IO.File]::Open("$old\history\a.scan", 'Open', 'Read', 'None')
 $locked = (& $moveData $old $new) -eq $old -and (Test-Path "$old\history\a.scan") -and -not (Test-Path "$new\history")
 $held.Close()
@@ -224,10 +236,10 @@ $version = [Diagnostics.FileVersionInfo]::GetVersionInfo("$PSScriptRoot\SpaceSca
 "What's new: $($notes.Count) releases, newest $($notes[0].Version) ($($notes[0].Lines.Count) lines), exe $version; unknown uninstall key=$($null -eq $noApp)"
 if ($noApp -or $notes.Count -lt 9 -or $notes[0].Version -ne $version -or ($notes | Where-Object { $_.Lines.Count -eq 0 -or -not $_.Title -or -not $picture.Invoke($null, [object[]]@($_.psobject.BaseObject)) })) { throw 'WHATS NEW MISMATCH' } else { 'WHATS NEW OK' }
 
-cmd /c rd /s /q "\\?\$root"
+Remove-TestTree $root
 
 # MFT path (admin only): C:\Windows totals from the MFT must match the classic walk within 2%.
-if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrators')) { 'MFT check skipped (run elevated)'; return }
+if ($SkipMft -or -not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { 'MFT check skipped (run elevated)'; return }
 $mftRoot = $asm.GetType('Mft').GetMethod('Scan').Invoke($null, [object[]]@('C:\'))
 $win = $mftRoot.Dirs | Where-Object { $_.Name -eq 'Windows' }
 $classic = [Activator]::CreateInstance($asm.GetType('Node')); $classic.Name = 'C:\Windows'
