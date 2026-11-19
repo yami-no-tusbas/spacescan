@@ -3,3 +3,5 @@ SpaceScan-crash.log
 dist/
 graft/
 *.scan
+
+.validation/

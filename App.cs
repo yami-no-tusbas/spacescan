@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -770,27 +770,32 @@ class MainUI
             string action = (string)item.Tag;
             item.Click += delegate { MenuAction(action, MenuTags()); };
         }
-        treeList.ContextMenu = menu;
-        topList.ContextMenu = menu;
-        foundList.ContextMenu = menu;
-        dupList.ContextMenu = menu;
-        var shelfItem = menu.Items.OfType<MenuItem>().First(i => (string)i.Tag == "shelfmove");
-        var backupItem = menu.Items.OfType<MenuItem>().First(i => (string)i.Tag == "backuplabs");
-        var backupJobItem = menu.Items.OfType<MenuItem>().First(i => (string)i.Tag == "backuplabsjob");
-        ContextMenuEventHandler opening = (s, e) =>
+        foreach (var list in new[] { treeList, topList, foundList, dupList })
         {
-            var tags = MenuTags();
-            if (tags.Count == 0) { e.Handled = true; return; }
-            foreach (var item in menu.Items.OfType<MenuItem>()) item.IsEnabled = !busy;
-            shelfItem.Visibility = tags.Count == 1 && Ecosystem.MoveCommand(tags[0] as Node) != null ? Visibility.Visible : Visibility.Collapsed;
-            // Backup Labs, when it's here: a folder or file it doesn't back up yet can be; one it knows opens its job
-            var node = tags.Count == 1 ? tags[0] as Node : null;
-            var job = node != null ? Ecosystem.BackupsAt(node) ?? Ecosystem.BackedUpAt(node) : null;
-            bool backupLabs = tags.Count == 1 && Ecosystem.Exe("backuplabs") != null && PathOf(tags[0]) != null;
-            backupItem.Visibility = backupLabs && job == null ? Visibility.Visible : Visibility.Collapsed;
-            backupJobItem.Visibility = backupLabs && job != null ? Visibility.Visible : Visibility.Collapsed;
-        };
-        foreach (var list in new[] { treeList, topList, foundList, dupList }) list.ContextMenuOpening += opening;
+            list.ContextMenu = new ContextMenu(); // enables keyboard ContextMenuOpening, never displayed
+            list.PreviewMouseRightButtonDown += (s, e) =>
+            {
+                var item = ItemsControl.ContainerFromElement(list, e.OriginalSource as DependencyObject) as ListBoxItem;
+                if (item == null) { list.SelectedItems.Clear(); return; }
+                if (!item.IsSelected) { list.SelectedItems.Clear(); item.IsSelected = true; }
+                item.Focus();
+            };
+            list.ContextMenuOpening += (s, e) =>
+            {
+                e.Handled = true;
+                if (busy) return;
+                var tags = MenuTags().Where(t => PathOf(t) != null).ToList();
+                if (tags.Count == 0) return;
+                Point point;
+                if (e.CursorLeft < 0)
+                {
+                    var item = list.ItemContainerGenerator.ContainerFromItem(list.SelectedItem) as FrameworkElement;
+                    point = (item ?? list).PointToScreen(new Point(24, item == null ? 24 : item.ActualHeight));
+                }
+                else point = list.PointToScreen(Mouse.GetPosition(list));
+                ShowShellMenu(tags, point);
+            };
+        }
 
         Find<Button>("elevateBtn").Click += delegate { RestartElevated(); };
         status.Text = "Ready";
@@ -798,6 +803,42 @@ class MainUI
         {
             pathBox.Text = startPath;
             Window.ContentRendered += delegate { StartOrStop(); };
+        }
+    }
+
+    void ShowShellMenu(List<object> tags, Point point)
+    {
+        var commands = new List<ShellContextMenu.Command>();
+        foreach (var item in menu.Items.OfType<MenuItem>())
+        {
+            string action = (string)item.Tag;
+            var node = tags.Count == 1 ? tags[0] as Node : null;
+            var job = node != null ? Ecosystem.BackupsAt(node) ?? Ecosystem.BackedUpAt(node) : null;
+            if (action == "shelfmove" && (tags.Count != 1 || Ecosystem.MoveCommand(node) == null)) continue;
+            if ((action == "backuplabs" || action == "backuplabsjob") &&
+                (tags.Count != 1 || Ecosystem.Exe("backuplabs") == null || (action == "backuplabsjob") != (job != null))) continue;
+            commands.Add(new ShellContextMenu.Command((string)item.Header, delegate { MenuAction(action, tags); }));
+        }
+        try
+        {
+            ShellContextMenu.Show(Window, tags.Select(PathOf).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(), point,
+                (Keyboard.Modifiers & ModifierKeys.Shift) != 0, commands);
+            status.Text = "Shell menu closed. After external file changes, press F5 to refresh the selected folder.";
+        }
+        catch (Exception ex)
+        {
+            var fallback = new ContextMenu { PlacementTarget = Window, HasDropShadow = false };
+            var reveal = new MenuItem { Header = "Show selection in Explorer (Windows menu)" };
+            reveal.Click += delegate { foreach (var group in tags.GroupBy(t => Path.GetDirectoryName(PathOf(t).TrimEnd('\\')))) ShowInExplorer(group.First()); };
+            fallback.Items.Add(reveal);
+            foreach (var command in commands)
+            {
+                var item = new MenuItem { Header = "SpaceScan: " + command.Label };
+                item.Click += delegate { command.Run(); };
+                fallback.Items.Add(item);
+            }
+            status.Text = "Shell menu unavailable: " + ex.Message;
+            fallback.IsOpen = true;
         }
     }
 
